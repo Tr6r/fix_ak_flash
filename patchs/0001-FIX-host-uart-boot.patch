@@ -1,0 +1,172 @@
+From babc57b1c39ffb8b4875d9a626a32a7271f95933 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=C4=90inh=20Qu=E1=BB=91c=20C=C6=B0=E1=BB=9Dng?=
+ <tr6r20@gmail.com>
+Date: Sun, 14 Dec 2025 10:47:30 +0700
+Subject: [PATCH] FIX host uart boot
+
+---
+ sources/uart_boot.cpp | 93 ++++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 82 insertions(+), 11 deletions(-)
+
+diff --git a/sources/uart_boot.cpp b/sources/uart_boot.cpp
+index 673bb68..4b917c1 100644
+--- a/sources/uart_boot.cpp
++++ b/sources/uart_boot.cpp
+@@ -24,6 +24,8 @@
+ #include <sys/stat.h>
+ #include <sys/signal.h>
+ #include <sys/time.h>
++#include <sys/ioctl.h>
++
+ 
+ #include "uart_boot.h"
+ #include "firmware.h"
+@@ -110,6 +112,8 @@ static void uart_boot_cmd_transfer_fw_req(void*);
+ static void uart_boot_cmd_transfer_fw_res(void*);
+ static void uart_boot_cmd_checksum_fw_req(void*);
+ static void uart_boot_cmd_checksum_fw_res(void*);
++static void uart_boot_dev_close();
++static int uart_reset_mcu(void);
+ 
+ static void timer_handler(int sig, siginfo_t *si, void *uc);
+ 
+@@ -124,6 +128,10 @@ void print_progress (double percentage, transfer_fw_status_t* fw_stt) {
+ static transfer_fw_status_t transfer_fw_status;
+ static uint32_t handshake_req_retry_counter;
+ 
++int g_argc = 0;
++char **g_argv = NULL;
++char g_exe_path[512];
++
+ int main(int argc, char *argv[]) {
+ #if 0
+ 	for (int i = 0; i < argc; i++) {
+@@ -141,10 +149,15 @@ int main(int argc, char *argv[]) {
+ 	 * host_uart_boot device_path file_path start_flash_address
+ 	 * example: host_uart_boot /dev/ttyUSB0 build/file_name.bin 0x80002000
+ 	 */
++	ssize_t len = readlink("/proc/self/exe", g_exe_path, sizeof(g_exe_path) - 1);
++	g_exe_path[len] = '\0';
++	g_argc = argc;
++	g_argv = argv;
+ 
+ 	/***
+ 	 * check firmware file
+ 	 */
++
+ 	firmware_path.assign(argv[2]);
+ 
+ 	if (firmware_get_info(&file_firmware_header, firmware_path.c_str()) == 0) {
+@@ -188,17 +201,37 @@ int main(int argc, char *argv[]) {
+ 	 */
+ 	uart_boot_dev_path.assign(argv[1]);
+ 
+-	if (uart_boot_dev_opentty(uart_boot_dev_path.c_str()) < 0) {
+-		cout << "[ERR] " << "Can't open dev path:" << uart_boot_dev_path.c_str() << endl;
+-		exit(-1);
+-	}
+-	else {
+-		pthread_create(&uart_boot_rx_thread, NULL, uart_boot_rx_thread_handler, NULL);
+-	}
++	int retry = 3;
++
++	while (retry--)
++	{
++		// Kiểm tra device có tồn tại chưa
++		if (access(uart_boot_dev_path.c_str(), F_OK) != 0)
++		{
++			cout << "[ERR] Device not found\n";
++			exit(-1);
+ 
+-	while (1) {}
++			// mở uart
++			if (uart_boot_dev_opentty(uart_boot_dev_path.c_str()) < 0)
++			{
++				cout << "[ERR] retry:" << retry << " Can't open " << uart_boot_dev_path.c_str() << endl;
++				uart_boot_dev_close();
++				usleep(300000);
++				continue;
++			}
++			// Mở thành công → start RX thread
++			pthread_create(&uart_boot_rx_thread, NULL, uart_boot_rx_thread_handler, NULL);
++			break;
++		}
+ 
+-	return 0;
++		if (retry <= 0)
++		{
++			cout << "[FATAL] Cannot open after retries." << endl;
++			return -1;
++		}
++		while (1) {}
++		return 0;
++	}
+ }
+ 
+ void timer_handler(int sig, siginfo_t *si, void *uc) {
+@@ -223,6 +256,8 @@ void timer_handler(int sig, siginfo_t *si, void *uc) {
+ 					pthread_mutex_lock(&uart_boot_to.mt);
+ 
+ 					cout << "\r[WRN] " << "handshake retry times " << std::dec << handshake_req_retry_counter << "!" << endl;
++					uart_reset_mcu();
++
+ 				}
+ 				else {
+ 					cout << "[ERR] " << "handshake faulted !" << endl;
+@@ -662,7 +697,7 @@ void uart_boot_cmd_handshake_res(void* boot_obj) {
+ 	}
+ 	else {
+ 		cout << "[ERR] " << "unexpected command !" << endl;
+-		exit(-1);
++		uart_reset_mcu();
+ 	}
+ }
+ 
+@@ -807,6 +842,42 @@ void uart_boot_cmd_checksum_fw_res(void* boot_obj) {
+ 		cout << "[ERR] " << "unexpected command !" << endl;
+ 		exit(-1);
+ 	}
+-
++	uart_boot_dev_close();
++	usleep(300000);
+ 	exit(0);
+ }
++int uart_reset_mcu(void)
++{
++	// gửi cmd reset
++	write(uart_boot_dev_fd, "\xDE", 1);
++	usleep(1000);
++	write(uart_boot_dev_fd, "\xAD", 1);
++	usleep(1000);
++	write(uart_boot_dev_fd, "\xBE", 1);
++
++	// đóng cổng uart
++	uart_boot_dev_close();
++	usleep(300000); // 300ms
++
++	// reset chương trình bằng execv()
++	execv(g_exe_path, g_argv);
++
++	// Nếu execv fail
++	perror("execv");
++	return -1;
++}
++
++void uart_boot_dev_close()
++{
++	if (uart_boot_dev_fd >= 0)
++	{
++		// 1. Đợi gửi xong
++		tcdrain(uart_boot_dev_fd);
++
++		// 2. flush RX
++		tcflush(uart_boot_dev_fd, TCIFLUSH);
++
++		close(uart_boot_dev_fd);
++		uart_boot_dev_fd = -1;
++	}
++}
+\ No newline at end of file
+-- 
+2.50.1
+
