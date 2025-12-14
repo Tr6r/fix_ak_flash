@@ -24,9 +24,9 @@ init:
 
 apply: init
 	@echo "Apply patch uart_boot"
-	@cd $(SOURCES)/$(AK_REPO2)/boot && \
-		git apply ../../../patchs/0001-FIX-host-uart-boot.patch
-	@cd $(SOURCES)/$(AK_REPO1)/boot && \
-		git apply ../../../patchs/0002-ADD-mcu-uart-boot-macro.patch
-	@cd $(SOURCES)/$(AK_REPO1)/boot && \
-		git apply ../../../patchs/0003-ADD-mcu-reset-fuction.patch
+	@cd $(SOURCES)/$(AK_REPO2) && \
+		git apply ../../patchs/0001-FIX-host-uart-boot.patch
+	@cd $(SOURCES)/$(AK_REPO1) && \
+		git apply ../../patchs/0001-ADD-mcu-uart-boot-macro.patch
+	@cd $(SOURCES)/$(AK_REPO1) && \
+		git apply ../../patchs/0002-ADD-mcu-reset-function.patch
