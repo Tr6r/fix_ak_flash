@@ -1,0 +1,35 @@
+From 8a1fa9f2286c30b82c8e3499d2db003c98561f26 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=C4=90inh=20Qu=E1=BB=91c=20C=C6=B0=E1=BB=9Dng?=
+ <tr6r20@gmail.com>
+Date: Sun, 14 Dec 2025 11:04:16 +0700
+Subject: [PATCH] ADD mcu uart boot macro
+
+---
+ boot/sources/app/uart_boot.h | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/boot/sources/app/uart_boot.h b/boot/sources/app/uart_boot.h
+index 6b69304..4fea4fb 100644
+--- a/boot/sources/app/uart_boot.h
++++ b/boot/sources/app/uart_boot.h
+@@ -29,7 +29,17 @@
+ #define FCS_STATE		0x03
+ 
+ #define UART_BOOT_SOP_CHAR		0xEF
++#define UART_BOOT_ACK_RESET   0xA5
++#define UART_BOOT_RESET_MAGIC_B1   0xDE
++#define UART_BOOT_RESET_MAGIC_B2   0xAD
++#define UART_BOOT_RESET_MAGIC_B3   0xBE
+ 
++
++#define UART_BOOT_RESET_MAGIC_MATCH(buf) \
++    ((buf[0] == UART_BOOT_RESET_MAGIC_B1) && \
++     (buf[1] == UART_BOOT_RESET_MAGIC_B2) && \
++     (buf[2] == UART_BOOT_RESET_MAGIC_B3))
++	 
+ typedef void (*pf_uart_boot_cmd_handler)(void*);
+ 
+ typedef struct {
+-- 
+2.50.1
+
