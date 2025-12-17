@@ -14,20 +14,20 @@ firmware updates.
 
 ## 2. Observed Issues
 
-- Handshake failure when the MCU remains in a previous bootloader state
-- UART device (`/dev/ttyUSBx`) cannot be reconnected after a failed flash
+- UART device (`/dev/ttyUSBx`) cannot connect after flashing
 - Bootloader parser state corruption after interrupted flashing
+- Handshake failure when the MCU remains in a previous bootloader state
 
 ---
 
 ## 3. Root Causes
 
+- `ak-flash` closes the UART device before transmit buffers are fully drained,
+  leaving the UART in an unstable state for the next flashing attempt
 - USB-UART device requires time to be detected again by the operating system
   after MCU reset, causing the UART port to be temporarily unavailable
 - MCU bootloader parser may remain in an incorrect state and does not accept
   new handshake requests
-- `ak-flash` closes the UART device before transmit buffers are fully drained,
-  leaving the UART in an unstable state for the next flashing attempt
 
 ---
 
